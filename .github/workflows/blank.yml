@@ -1,0 +1,47 @@
+name: Random Website Visitor
+
+on:
+  schedule:
+    # 每天 UTC 时间 0:00 运行（可根据需要调整）
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: '浏览持续时间（分钟）'
+        required: false
+        default: '5'
+
+jobs:
+  browse-websites:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        pip install selenium
+    
+    - name: Set up Chrome
+      uses: browser-actions/setup-chrome@v1
+      with:
+        chrome-version: 120
+        install-chromedriver: true
+    
+    - name: Run headless browser
+      run: python browser_script.py
+      env:
+        BROWSE_DURATION: ${{ github.event.inputs.duration || '5' }}
+    
+    - name: Upload logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: browse-logs
+        path: browser.log
