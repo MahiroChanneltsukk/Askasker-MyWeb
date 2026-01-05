@@ -31,7 +31,7 @@ jobs:
     - name: Set up Chrome
       uses: browser-actions/setup-chrome@v1
       with:
-        chrome-version: 120
+        chrome-version: stable
         install-chromedriver: true
     
     - name: Run headless browser
