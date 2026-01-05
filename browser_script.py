@@ -22,11 +22,7 @@ logging.basicConfig(
 
 # 配置网站列表
 WEBSITES = [
-    'https://www.github.com',
-    'https://www.python.org',
-    'https://stackoverflow.com',
-    'https://news.ycombinator.com',
-    'https://www.reddit.com/r/programming',
+    'https://dahi.icu',
 ]
 
 # 从环境变量获取持续时间（分钟），默认 5 分钟
