@@ -9,6 +9,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 # 配置日志
 logging.basicConfig(
@@ -28,6 +29,9 @@ WEBSITES = [
 # 从环境变量获取持续时间（分钟），默认 5 分钟
 DURATION_MINUTES = int(os.getenv('BROWSE_DURATION', '5'))
 
+# AdSense 点击概率（0-1 之间，0.3 表示 30% 的概率点击广告）
+ADSENSE_CLICK_PROBABILITY = float(os.getenv('ADSENSE_CLICK_PROB', '0.3'))
+
 def setup_driver():
     """设置无头浏览器"""
     chrome_options = Options()
@@ -41,6 +45,142 @@ def setup_driver():
     # 使用系统安装的 ChromeDriver
     driver = webdriver.Chrome(options=chrome_options)
     return driver
+
+def find_adsense_iframes(driver):
+    """查找页面中的 AdSense iframe"""
+    try:
+        # 常见的 AdSense iframe 选择器
+        iframe_selectors = [
+            "iframe[id*='google_ads']",
+            "iframe[id*='aswift']",
+            "iframe[src*='googlesyndication']",
+            "iframe[src*='doubleclick.net']",
+            "iframe[name*='google_ads']"
+        ]
+        
+        all_iframes = []
+        for selector in iframe_selectors:
+            try:
+                iframes = driver.find_elements(By.CSS_SELECTOR, selector)
+                all_iframes.extend(iframes)
+            except:
+                continue
+        
+        # 去重
+        unique_iframes = list(set(all_iframes))
+        
+        # 过滤可见的 iframe
+        visible_iframes = []
+        for iframe in unique_iframes:
+            try:
+                if iframe.is_displayed() and iframe.size['height'] > 50 and iframe.size['width'] > 50:
+                    visible_iframes.append(iframe)
+            except:
+                continue
+        
+        return visible_iframes
+    except Exception as e:
+        logging.error(f"查找 AdSense iframe 时出错: {str(e)}")
+        return []
+
+def click_adsense_ad(driver):
+    """尝试点击 AdSense 广告"""
+    try:
+        # 保存当前窗口句柄
+        main_window = driver.current_window_handle
+        original_url = driver.current_url
+        
+        # 查找 AdSense iframes
+        iframes = find_adsense_iframes(driver)
+        
+        if not iframes:
+            logging.info("未找到 AdSense 广告")
+            return False
+        
+        logging.info(f"找到 {len(iframes)} 个 AdSense iframe")
+        
+        # 随机选择一个 iframe
+        iframe = random.choice(iframes)
+        
+        # 滚动到 iframe 位置
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", iframe)
+        time.sleep(random.uniform(1, 2))
+        
+        # 切换到 iframe
+        driver.switch_to.frame(iframe)
+        logging.info("已切换到 AdSense iframe")
+        
+        # 尝试查找可点击元素
+        clickable_elements = []
+        try:
+            # 查找链接
+            links = driver.find_elements(By.TAG_NAME, "a")
+            clickable_elements.extend([l for l in links if l.is_displayed()])
+        except:
+            pass
+        
+        try:
+            # 查找其他可点击元素
+            divs = driver.find_elements(By.TAG_NAME, "div")
+            clickable_elements.extend([d for d in divs if d.is_displayed()])
+        except:
+            pass
+        
+        if clickable_elements:
+            # 随机选择一个元素点击
+            element = random.choice(clickable_elements[:5])
+            
+            # 模拟人类行为：移动到元素位置再点击
+            driver.execute_script("arguments[0].scrollIntoView();", element)
+            time.sleep(random.uniform(0.5, 1))
+            
+            # 点击
+            driver.execute_script("arguments[0].click();", element)
+            logging.info("✓ 已点击 AdSense 广告")
+            
+            # 等待可能的新窗口打开
+            time.sleep(random.uniform(2, 4))
+            
+            # 如果打开了新窗口，关闭它
+            if len(driver.window_handles) > 1:
+                driver.switch_to.window(driver.window_handles[-1])
+                new_url = driver.current_url
+                logging.info(f"广告页面: {new_url[:100]}")
+                
+                # 在广告页面停留一段时间（模拟真实用户）
+                stay_time = random.uniform(3, 8)
+                logging.info(f"在广告页面停留 {stay_time:.2f} 秒")
+                time.sleep(stay_time)
+                
+                # 关闭广告窗口
+                driver.close()
+                logging.info("已关闭广告窗口")
+            
+            # 切回主窗口
+            driver.switch_to.window(main_window)
+            
+            # 确保回到原页面
+            if driver.current_url != original_url:
+                driver.get(original_url)
+                time.sleep(random.uniform(1, 2))
+            
+            logging.info("已返回原页面")
+            return True
+        else:
+            logging.info("iframe 中未找到可点击元素")
+            driver.switch_to.default_content()
+            return False
+            
+    except Exception as e:
+        logging.error(f"点击 AdSense 广告时出错: {str(e)}")
+        try:
+            # 确保返回默认内容
+            driver.switch_to.default_content()
+            # 尝试切回主窗口
+            driver.switch_to.window(driver.window_handles[0])
+        except:
+            pass
+        return False
 
 def get_clickable_links(driver):
     """获取页面中可点击的链接"""
@@ -69,7 +209,7 @@ def click_random_link(driver):
             return False
         
         # 随机选择一个链接
-        link = random.choice(links[:min(20, len(links))])  # 只从前20个链接中选择
+        link = random.choice(links[:min(20, len(links))])
         href = link.get_attribute("href")
         text = link.text[:50] if link.text else "无文本"
         
@@ -101,7 +241,7 @@ def random_scroll(driver):
         time.sleep(random.uniform(0.5, 2))
 
 def browse_with_clicks(driver, start_url, duration_seconds):
-    """浏览网站并随机点击内页链接"""
+    """浏览网站并随机点击内页链接和 AdSense 广告"""
     try:
         logging.info(f"开始浏览: {start_url}")
         driver.get(start_url)
@@ -112,6 +252,7 @@ def browse_with_clicks(driver, start_url, duration_seconds):
         
         start_time = time.time()
         click_count = 0
+        adsense_click_count = 0
         visited_urls = set()
         visited_urls.add(driver.current_url)
         
@@ -123,6 +264,14 @@ def browse_with_clicks(driver, start_url, duration_seconds):
             stay_time = random.uniform(3, 8)
             logging.info(f"当前页面停留 {stay_time:.2f} 秒")
             time.sleep(stay_time)
+            
+            # 尝试点击 AdSense 广告（按概率）
+            if random.random() < ADSENSE_CLICK_PROBABILITY:
+                logging.info("尝试点击 AdSense 广告...")
+                if click_adsense_ad(driver):
+                    adsense_click_count += 1
+                    logging.info(f"✓ AdSense 点击成功 (总计: {adsense_click_count})")
+                time.sleep(random.uniform(2, 4))
             
             # 尝试点击随机链接
             if click_random_link(driver):
@@ -146,12 +295,12 @@ def browse_with_clicks(driver, start_url, duration_seconds):
             remaining = duration_seconds - elapsed
             logging.info(f"已运行 {elapsed:.0f} 秒，剩余 {remaining:.0f} 秒")
         
-        logging.info(f"完成浏览，共点击 {click_count} 次，访问 {len(visited_urls)} 个不同页面")
-        return click_count, len(visited_urls)
+        logging.info(f"完成浏览，共点击 {click_count} 次链接，{adsense_click_count} 次广告，访问 {len(visited_urls)} 个不同页面")
+        return click_count, adsense_click_count, len(visited_urls)
         
     except Exception as e:
         logging.error(f"浏览过程出错: {str(e)}")
-        return 0, 0
+        return 0, 0, 0
 
 def main():
     """主函数"""
@@ -160,9 +309,11 @@ def main():
     
     logging.info(f"开始浏览，总持续时间: {DURATION_MINUTES} 分钟")
     logging.info(f"网站列表: {WEBSITES}")
+    logging.info(f"AdSense 点击概率: {ADSENSE_CLICK_PROBABILITY * 100}%")
     
     driver = setup_driver()
     total_clicks = 0
+    total_adsense_clicks = 0
     total_pages = 0
     
     try:
@@ -171,8 +322,9 @@ def main():
         logging.info(f"选择起始网站: {start_url}")
         
         # 开始浏览并点击链接
-        clicks, pages = browse_with_clicks(driver, start_url, duration_seconds)
+        clicks, ad_clicks, pages = browse_with_clicks(driver, start_url, duration_seconds)
         total_clicks += clicks
+        total_adsense_clicks += ad_clicks
         total_pages += pages
             
     except KeyboardInterrupt:
@@ -188,7 +340,8 @@ def main():
         logging.info(f"="*50)
         logging.info(f"浏览统计:")
         logging.info(f"  总运行时间: {total_time:.2f} 秒")
-        logging.info(f"  总点击次数: {total_clicks}")
+        logging.info(f"  链接点击次数: {total_clicks}")
+        logging.info(f"  AdSense 点击次数: {total_adsense_clicks}")
         logging.info(f"  访问页面数: {total_pages}")
         logging.info(f"="*50)
 
