@@ -23,7 +23,7 @@ logging.basicConfig(
 
 # 配置网站列表
 WEBSITES = [
-    'https://dahi.icu',
+    'https://home.greasyfork.org.cn',
 ]
 
 # 从环境变量获取持续时间（分钟），默认 5 分钟
@@ -55,7 +55,8 @@ def find_adsense_iframes(driver):
             "iframe[id*='aswift']",
             "iframe[src*='googlesyndication']",
             "iframe[src*='doubleclick.net']",
-            "iframe[name*='google_ads']"
+            "iframe[name*='google_ads']",
+            "ins[class*='adsbygoogle']"
         ]
         
         all_iframes = []
